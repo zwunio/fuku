@@ -279,6 +279,7 @@ end)
 local EYE = 1.75
 local CROUCHED_EYE = 0.25
 local GUN_HEIGHT = 4
+local GLUE_PARK = Vector3.new(0, -0.7, 0.05)
 local LEAD_CAP = 10
 local SAMPLE_WINDOW = 0.15
 local MAX_RANGE = 100
@@ -303,20 +304,12 @@ local OFFSETS = {
 	Vector3.new(0, 7, 0),
 }
 
-local GLUE_OFFSETS = {
-	Vector3.zero,
-	Vector3.new(2, 0, 0),
-	Vector3.new(-2, 0, 0),
-	Vector3.new(0, 0, 2),
-	Vector3.new(0, 0, -2),
-	Vector3.new(0, 2, 0),
-}
-
 local castParams = RaycastParams.new()
 castParams.FilterType = Enum.RaycastFilterType.Exclude
 castParams.IgnoreWater = true
 
-local desync = { real = nil, server = nil, lastPose = nil, frozen = false }
+local desync = { real = nil, server = nil, lastPose = nil }
+local glue = { part = nil, bound = false, reported = false }
 local trackPose, trackFighter = nil, nil
 local voidPose, voidAt = nil, 0
 local fallenSet, fflagsSet = false, false
@@ -352,6 +345,77 @@ local function identity(level)
 	return old
 end
 
+local function raw_set_cframe(part, cf)
+	local old = identity(8)
+	local wrote = pcall(function()
+		part.CFrame = cf
+	end)
+	if old then
+		identity(old)
+	end
+	if wrote then
+		return true
+	end
+	return pcall(function()
+		part.CFrame = cf
+	end)
+end
+
+local function set_rep_root(part, target)
+	if type(sethiddenproperty) ~= "function" then
+		return false
+	end
+	local old = identity(8)
+	local wrote = pcall(sethiddenproperty, part, "PhysicsRepRootPart", target)
+	local seen = nil
+	if wrote and type(gethiddenproperty) == "function" then
+		local ok, value = pcall(gethiddenproperty, part, "PhysicsRepRootPart")
+		if ok then
+			seen = value
+		end
+	end
+	if old then
+		identity(old)
+	end
+	if not wrote then
+		return false
+	end
+	if seen ~= nil and seen ~= target then
+		return false
+	end
+	return true
+end
+
+local function glue_bind(root, hit)
+	if glue.bound and glue.part == hit then
+		return true
+	end
+	if not set_rep_root(root, hit) then
+		glue.part, glue.bound = nil, false
+		if not glue.reported then
+			glue.reported = true
+			menu["new_notification"]("glue refused by executor", 5)
+		end
+		return false
+	end
+	glue.part, glue.bound = hit, true
+	if not glue.reported then
+		glue.reported = true
+		menu["new_notification"]("glue bound", 2)
+	end
+	return true
+end
+
+local function glue_release(root)
+	if not glue.bound then
+		return
+	end
+	glue.part, glue.bound = nil, false
+	if root and root.Parent then
+		set_rep_root(root, root)
+	end
+end
+
 local function apply_fflags()
 	if fflagsSet or type(setfflag) ~= "function" then
 		return
@@ -368,33 +432,6 @@ local function restore_fflags()
 	fflagsSet = false
 	pcall(setfflag, "DFIntS2PhysicsSenderRate", "15")
 	pcall(setfflag, "DFIntAssemblyHistoryBufferSize", "15")
-end
-
-local function freeze(root)
-	if desync.frozen or type(sethiddenproperty) ~= "function" then
-		return
-	end
-	local old = identity(8)
-	pcall(sethiddenproperty, root, "PhysicsRepRootPart", Workspace.Terrain)
-	if old then
-		identity(old)
-	end
-	desync.frozen = true
-end
-
-local function unfreeze(root)
-	if not desync.frozen then
-		return
-	end
-	desync.frozen = false
-	if type(sethiddenproperty) ~= "function" then
-		return
-	end
-	local old = identity(8)
-	pcall(sethiddenproperty, root, "PhysicsRepRootPart", nil)
-	if old then
-		identity(old)
-	end
 end
 
 local function protect_fallen()
@@ -900,44 +937,13 @@ local function eye_offset(fighter)
 	return Vector3.new(0, crouched and CROUCHED_EYE or EYE, 0)
 end
 
-local function head_drop(target)
-	return target.part.Position.Y - target.root.Position.Y
-end
-
-local function solve_gun(target, eye, velocity, deltaTime, method)
-	local fallback = nil
-
-	if method == "glue" then
-		local head = target.part
-		local _, yaw = head.CFrame:ToOrientation()
-		local frame = CFrame.new(head.Position) * CFrame.Angles(0, yaw, 0)
-		local base = Vector3.new(0, GUN_HEIGHT - head_drop(target), 0.05)
-		local floor = target.root.Position.Y + 2
-
-		for _, extra in GLUE_OFFSETS do
-			local position = (frame * CFrame.new(base + extra)).Position
-			if position.Y >= floor then
-				local origin = position + eye
-				local possible, isHead = aim_result(origin, target)
-				if possible and not shielded(target, origin) then
-					if isHead then
-						return CFrame.new(position)
-					end
-					fallback = fallback or CFrame.new(position)
-				end
-			end
-		end
-
-		if fallback then
-			return fallback
-		end
-	end
-
+local function solve_world(target, eye, velocity, deltaTime, method)
 	local anchor = target.root.Position
 	if method == "prediction" then
 		anchor = anchor + lead_vector(velocity, deltaTime)
 	end
 
+	local fallback = nil
 	for _, offset in OFFSETS do
 		local position = anchor + offset
 		local origin = position + eye
@@ -949,24 +955,12 @@ local function solve_gun(target, eye, velocity, deltaTime, method)
 			fallback = fallback or CFrame.new(position)
 		end
 	end
-
 	return fallback
-end
-
-local function solve_melee(target, velocity, deltaTime, method)
-	if method == "glue" then
-		return CFrame.new(target.part.Position)
-	end
-	local position = target.root.Position
-	if method == "prediction" then
-		position = position + lead_vector(velocity, deltaTime)
-	end
-	return CFrame.new(position)
 end
 
 local function void_pose(now)
 	if not voidPose or now >= voidAt then
-		voidPose = CFrame.new(math.random(-100000, 100000), math.random(90000, 110000), math.random(-100000, 100000))
+		voidPose = CFrame.new(math.random(-100000, 100000), math.random(110000, 130000), math.random(-100000, 100000))
 		voidAt = now + VOID_REFRESH
 	end
 	return voidPose
@@ -1004,9 +998,9 @@ end
 local function fire_gun(item, aim, part, now)
 	local inner = {
 		[K0] = Utility:EncodeCFrame(aim),
-		[K1] = Utility:EncodeCFrame(aim + Vector3.new(0.01, 0.01, 0.01)),
+		[K1] = Utility:EncodeCFrame(aim - Vector3.new(0, 0.1, 0)),
 		[K2] = part,
-		[K3] = Utility:EncodeCFrame(CFrame.new()),
+		[K3] = Utility:EncodeCFrame(CFrame.new(0, 1, 0)),
 	}
 	if item.Name == "Revolver" then
 		inner[K4] = true
@@ -1108,11 +1102,9 @@ local function drop(root)
 	reloadLatch = nil
 	spam.phase = nil
 	spam.shots = 0
+	glue_release(root)
 	restore_fallen()
 	restore_fflags()
-	if root then
-		unfreeze(root)
-	end
 end
 
 RunService.Heartbeat:Connect(function(deltaTime)
@@ -1143,6 +1135,7 @@ RunService.Heartbeat:Connect(function(deltaTime)
 	local equipped = fighter.EquippedItem
 	local method = choice("rage_method", "glue")
 	local pose, attacking, target = nil, false, nil
+	local useGlue = false
 
 	if item_index(equipped) ~= slot then
 		reloadLatch = nil
@@ -1155,19 +1148,6 @@ RunService.Heartbeat:Connect(function(deltaTime)
 	elseif type(equipped.IsEquipping) == "function" and select(2, pcall(equipped.IsEquipping, equipped)) == true then
 		spam.phase = nil
 		pose = void_pose(now)
-	elseif slot == 3 then
-		reloadLatch = nil
-		spam.phase = nil
-		target = pick_target(trackFighter)
-		if target then
-			local velocity = observe(target, now)
-			pose = solve_melee(target, velocity, deltaTime, method)
-			trackPose, trackFighter = pose, target.fighter
-			attacking = now >= fireAt
-		else
-			trackPose, trackFighter = nil, nil
-			pose = void_pose(now)
-		end
 	elseif reloadLatch == equipped then
 		spam.phase = nil
 		if stat(equipped, "Ammo") <= 0 and stat(equipped, "AmmoReserve") <= 0 then
@@ -1180,7 +1160,7 @@ RunService.Heartbeat:Connect(function(deltaTime)
 			pose = void_pose(now)
 			start_reload(equipped)
 		end
-	elseif stat(equipped, "Ammo") <= 0 then
+	elseif slot ~= 3 and stat(equipped, "Ammo") <= 0 then
 		reloadLatch = equipped
 		spam.phase = nil
 		pose = void_pose(now)
@@ -1189,58 +1169,86 @@ RunService.Heartbeat:Connect(function(deltaTime)
 		if target then
 			local velocity = observe(target, now)
 			local eye = eye_offset(fighter)
-			local solved = solve_gun(target, eye, velocity, deltaTime, method)
+			local exposed = true
 
-			if solved then
-				if trackFighter ~= target.fighter or trackPose == nil or (solved.Position - trackPose.Position).Magnitude > POSE_RESET then
-					settleAt = now + settle_time()
-				end
-				trackPose, trackFighter = solved, target.fighter
-
-				local exposed = true
-				if bool("rage_voidspam", true) then
-					local attackWindow = math.clamp(number("rage_attack_ms", 100), 10, 500) / 1000
-					local hideWindow = math.clamp(number("rage_hide_ms", 250), 10, 1000) / 1000
-					if spam.phase == nil then
+			if slot ~= 3 and bool("rage_voidspam", true) then
+				local attackWindow = math.clamp(number("rage_attack_ms", 100), 10, 500) / 1000
+				local hideWindow = math.clamp(number("rage_hide_ms", 250), 10, 1000) / 1000
+				if spam.phase == nil then
+					spam.phase = "attack"
+					spam.shots = 0
+					spam.endsAt = now + attackWindow
+				elseif now >= spam.endsAt then
+					if spam.phase == "attack" then
+						spam.phase = "hide"
+						spam.endsAt = now + hideWindow + math.random() * (VOID_JITTER / 1000)
+					else
 						spam.phase = "attack"
 						spam.shots = 0
-						settleAt = now + settle_time()
-						spam.endsAt = now + settle_time() + attackWindow
-					elseif now >= spam.endsAt then
-						if spam.phase == "attack" then
-							spam.phase = "hide"
-							spam.endsAt = now + hideWindow + math.random() * (VOID_JITTER / 1000)
-						else
-							spam.phase = "attack"
-							spam.shots = 0
-							settleAt = now + settle_time()
-							spam.endsAt = now + settle_time() + attackWindow
-						end
+						spam.endsAt = now + attackWindow
 					end
-					exposed = spam.phase == "attack" and spam.shots < MAX_SHOTS
-				else
-					spam.phase = nil
-					spam.shots = 0
 				end
-
-				if exposed then
-					pose = solved
-					local origin = solved.Position + eye
-					attacking = aim_result(origin, target)
-						and now >= settleAt
-						and now >= fireAt
-						and expected_ammo(equipped, now) > 0
-						and (target.part.Position - origin).Magnitude <= MAX_RANGE
-						and not is_reloading(equipped)
-						and can_shoot(equipped, now)
-						and not deflecting(target.fighter)
-						and not shielded(target, origin)
-				else
-					pose = void_pose(now)
-				end
+				exposed = spam.phase == "attack" and spam.shots < MAX_SHOTS
 			else
 				spam.phase = nil
-				trackPose, trackFighter = nil, nil
+				spam.shots = 0
+			end
+
+			if exposed then
+				if method == "glue" and glue_bind(root, target.part) then
+					useGlue = true
+					pose = CFrame.new(target.part.Position + GLUE_PARK)
+					trackPose, trackFighter = pose, target.fighter
+					local origin = pose.Position + eye
+					if slot == 3 then
+						attacking = now >= fireAt
+					else
+						attacking = now >= fireAt
+							and expected_ammo(equipped, now) > 0
+							and (target.part.Position - origin).Magnitude <= MAX_RANGE
+							and not is_reloading(equipped)
+							and can_shoot(equipped, now)
+							and not deflecting(target.fighter)
+					end
+				else
+					local solved
+					if slot == 3 then
+						local position = target.root.Position
+						if method == "prediction" then
+							position = position + lead_vector(velocity, deltaTime)
+						end
+						solved = CFrame.new(position)
+					else
+						solved = solve_world(target, eye, velocity, deltaTime, method)
+					end
+
+					if solved then
+						if trackFighter ~= target.fighter or trackPose == nil or (solved.Position - trackPose.Position).Magnitude > POSE_RESET then
+							settleAt = now + settle_time()
+						end
+						trackPose, trackFighter = solved, target.fighter
+						pose = solved
+						local origin = solved.Position + eye
+						if slot == 3 then
+							attacking = now >= fireAt
+						else
+							attacking = aim_result(origin, target)
+								and now >= settleAt
+								and now >= fireAt
+								and expected_ammo(equipped, now) > 0
+								and (target.part.Position - origin).Magnitude <= MAX_RANGE
+								and not is_reloading(equipped)
+								and can_shoot(equipped, now)
+								and not deflecting(target.fighter)
+								and not shielded(target, origin)
+						end
+					else
+						spam.phase = nil
+						trackPose, trackFighter = nil, nil
+						pose = void_pose(now)
+					end
+				end
+			else
 				pose = void_pose(now)
 			end
 		else
@@ -1254,10 +1262,13 @@ RunService.Heartbeat:Connect(function(deltaTime)
 		pose = void_pose(now)
 	end
 
-	freeze(root)
+	if not useGlue then
+		glue_release(root)
+	end
+
 	desync.server = pose
 	desync.lastPose = pose
-	root.CFrame = pose
+	raw_set_cframe(root, pose)
 
 	local landed = false
 
