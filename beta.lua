@@ -1,3 +1,6 @@
+getgenv().script_name = "fuku"
+getgenv().script_version = "beta"
+
 if not game:IsLoaded() then
 	game.Loaded:Wait()
 end
@@ -12,11 +15,6 @@ while player == nil do
 	Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
 	player = Players.LocalPlayer
 end
-
-local playerScripts = player:WaitForChild("PlayerScripts")
-local controllers = playerScripts:WaitForChild("Controllers")
-local modules = ReplicatedStorage:WaitForChild("Modules")
-local itemTypes = modules:WaitForChild("ItemTypes")
 
 local lib = loadstring(game:HttpGet("https://raw.githubusercontent.com/zwunio/juju/main/ui.lua"))()
 
@@ -132,23 +130,62 @@ right:create_element({ ["name"] = "no spread" }, {
 	["toggle"] = { ["flag"] = "no_spread", ["default"] = false },
 })
 
-local FighterController = require(controllers:WaitForChild("FighterController"))
-local CameraController = require(controllers:WaitForChild("CameraController"))
-local Melee = require(itemTypes:WaitForChild("Melee"))
-local Gun = require(itemTypes:WaitForChild("Gun"))
-local Utility = require(modules:WaitForChild("Utility"))
-local EnumLibrary = require(modules:WaitForChild("EnumLibrary"))
-local items = require(modules:WaitForChild("ItemLibrary")).Items
+local function load_module(parent, name)
+	if not parent then
+		return nil
+	end
+	local child = parent:FindFirstChild(name) or parent:WaitForChild(name, 10)
+	if not child then
+		return nil
+	end
+	local ok, result = pcall(require, child)
+	if ok then
+		return result
+	end
+	return nil
+end
 
-local SpectateController
+local playerScripts = player:WaitForChild("PlayerScripts", 20)
+local controllers = playerScripts and playerScripts:WaitForChild("Controllers", 20)
+local clientModules = playerScripts and playerScripts:WaitForChild("Modules", 20)
+local itemTypes = clientModules and clientModules:WaitForChild("ItemTypes", 20)
+local sharedModules = ReplicatedStorage:WaitForChild("Modules", 20)
+
+if not (controllers and itemTypes and sharedModules) then
+	menu["new_notification"]("fuku: game modules unavailable", 6)
+	return
+end
+
+local FighterController = load_module(controllers, "FighterController")
+local CameraController = load_module(controllers, "CameraController")
+local Melee = load_module(itemTypes, "Melee")
+local Gun = load_module(itemTypes, "Gun")
+local Utility = load_module(sharedModules, "Utility")
+local EnumLibrary = load_module(sharedModules, "EnumLibrary")
+local ItemLibrary = load_module(sharedModules, "ItemLibrary")
+local SpectateController = load_module(controllers, "SpectateController")
+
+if not (FighterController and CameraController and Melee and Gun and Utility and EnumLibrary and ItemLibrary) then
+	menu["new_notification"]("fuku: failed to require modules", 6)
+	return
+end
+
 pcall(function()
-	SpectateController = require(controllers:WaitForChild("SpectateController"))
+	if type(EnumLibrary.WaitForEnumBuilder) == "function" then
+		EnumLibrary:WaitForEnumBuilder()
+	end
 end)
 
+local items = ItemLibrary.Items
+if type(items) ~= "table" then
+	menu["new_notification"]("fuku: item library unavailable", 6)
+	return
+end
+
 local UseItem = ReplicatedStorage:FindFirstChild("UseItem", true)
-local attempts = 0
-while UseItem == nil and attempts < 100 do
-	attempts += 1
+local tries = 0
+while UseItem == nil and tries < 50 do
+	tries += 1
 	task.wait(0.1)
 	UseItem = ReplicatedStorage:FindFirstChild("UseItem", true)
 end
