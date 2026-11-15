@@ -237,13 +237,16 @@ end)
 
 local EYE = 1.75
 local CROUCHED_EYE = 0.25
-local LEAD_CAP = 10
-local SAMPLE_WINDOW = 0.15
 local MAX_RANGE = 100
 local VOID_JITTER = 60
 local VOID_REFRESH = 0.03
 local MAX_SHOTS = 10
 local VOID = 1000000
+local VFR_LIMIT = 2147483646
+local VFR_DEAD = 1147483646
+local HOLD_JUMP = 2
+local PRED_MULT = 1.2
+local PRED_CAP = 20
 local SLOT = { primary = 1, secondary = 2, melee = 3 }
 local K0, K1, K2, K3, K4 = utf8.char(0), utf8.char(1), utf8.char(2), utf8.char(3), utf8.char(4)
 local RELOAD_ANIMS = { "EmptyReload", "EmptyReloadStart", "EmptyReloadSegment", "EmptyReloadFinish", "Reload" }
@@ -263,12 +266,13 @@ local castParams = RaycastParams.new()
 castParams.FilterType = Enum.RaycastFilterType.Exclude
 castParams.IgnoreWater = true
 
-local desync = { real = nil, wrote = nil, active = false }
-local trackPose, trackFighter = nil, nil
+local desync = { real = nil, lv = nil, av = nil, wrote = nil, active = false }
+local holdPose, holdSince = nil, 0
+local trackFighter = nil
 local voidPose, voidAt = nil, 0
 local fallenGuarded = false
 local spam = { phase = nil, endsAt = 0, shots = 0 }
-local settleAt, equipAt, fireAt, rotationAt = 0, 0, 0, 0
+local equipAt, fireAt, rotationAt = 0, 0, 0
 local ping, pingAt = 0.08, 0
 local reloadLatch = nil
 local reloadRequestAt = 0
@@ -327,7 +331,7 @@ local function local_root()
 end
 
 local function settle_time()
-	return math.clamp(ping + 0.02, 0.03, 0.12)
+	return math.clamp(ping * 2 + 0.05, 0.08, 0.3)
 end
 
 local function update_ping()
@@ -568,54 +572,51 @@ end
 
 local function observe(target, now)
 	local position = target.part.Position
-	local reported = Vector3.zero
-	local ok, value = pcall(function() return target.root.AssemblyLinearVelocity end)
-	if ok and typeof(value) == "Vector3" and value == value then reported = value end
 	local entry = motion[target.fighter]
 	if not entry then
-		entry = { samples = {}, velocity = Vector3.zero }
+		entry = { pos = position, t = now, vel = Vector3.zero, acc = Vector3.zero }
 		motion[target.fighter] = entry
+		return entry.vel, entry.acc
 	end
-	local samples = entry.samples
-	samples[#samples + 1] = { t = now, p = position }
-	while #samples > 2 and now - samples[1].t > SAMPLE_WINDOW do
-		table.remove(samples, 1)
-	end
-	local derived = Vector3.zero
-	local first = samples[1]
-	local span = now - first.t
-	if span > 0.03 then
-		local delta = position - first.p
-		derived = delta / span
-		if delta.Magnitude > 60 then
-			entry.velocity = Vector3.zero
-			derived = Vector3.zero
+
+	local elapsed = now - entry.t
+	if elapsed > 1 / 240 then
+		local instant = (position - entry.pos) / elapsed
+		if instant.Magnitude > 400 then
+			instant = Vector3.zero
 		end
+		local ok, reported = pcall(function() return target.root.AssemblyLinearVelocity end)
+		if ok and typeof(reported) == "Vector3" and reported == reported and reported.Magnitude > instant.Magnitude then
+			instant = reported
+		end
+		local newVel = entry.vel:Lerp(instant, 0.6)
+		local acc = (newVel - entry.vel) / elapsed
+		if acc.Magnitude > 200 then acc = acc.Unit * 200 end
+		entry.vel, entry.acc = newVel, acc
+		entry.pos, entry.t = position, now
 	end
-	local instant = reported
-	if derived.Magnitude > instant.Magnitude then instant = derived end
-	if instant.Magnitude > 200 then instant = instant.Unit * 200 end
-	entry.velocity = entry.velocity * 0.65 + instant * 0.35
-	local velocity = entry.velocity
-	if velocity.Magnitude < 2 then return Vector3.zero end
-	return velocity
+
+	return entry.vel, entry.acc
 end
 
-local function lead_vector(velocity, deltaTime)
-	if velocity.Magnitude < 2 then return Vector3.zero end
-	local leadTime = math.clamp(ping * 2 + deltaTime, 0, 0.3)
-	local lead = velocity * leadTime
-	lead = Vector3.new(lead.X, lead.Y * 0.35, lead.Z)
-	if lead.Magnitude > LEAD_CAP then lead = lead.Unit * LEAD_CAP end
-	return lead
+local function predict_point(target, origin, vel, acc, method)
+	local base = target.part.Position
+	if method ~= "prediction" then return base end
+	local distance = (base - origin).Magnitude
+	local total = math.min((distance / 3000 + ping * 0.5 + 0.016) * PRED_MULT, 0.5)
+	local shift = vel * total + acc * (0.5 * total * total)
+	if shift.Magnitude > PRED_CAP then shift = shift.Unit * PRED_CAP end
+	local point = base + shift
+	if point ~= point then return base end
+	return point
 end
 
-local function ray_check(origin, target)
+local function ray_check(origin, target, point)
 	local ignore = { player.Character }
 	local viewModels = Workspace:FindFirstChild("ViewModels")
 	if viewModels then ignore[#ignore + 1] = viewModels end
 	castParams.FilterDescendantsInstances = ignore
-	local direction = target.part.Position - origin
+	local direction = point - origin
 	if direction.Magnitude < 0.01 then return true, true end
 	local hit = Workspace:Raycast(origin, direction, castParams)
 	if hit == nil then return true, true end
@@ -633,24 +634,32 @@ local function eye_offset(fighter)
 	return Vector3.new(0, crouched and CROUCHED_EYE or EYE, 0)
 end
 
-local function solve_gun(target, eye, velocity, deltaTime, method)
-	local anchor = target.part.Position
-	if method == "prediction" then anchor = anchor + lead_vector(velocity, deltaTime) end
+local function solve_gun(target, eye, point)
 	local fallback = nil
 	for _, offset in GUN_OFFSETS do
-		local position = anchor + offset
-		local possible, isHead = ray_check(position + eye, target)
+		local position = point + offset
+		local possible, isHead = ray_check(position + eye, target, point)
 		if possible then
 			if isHead then return CFrame.new(position) end
 			fallback = fallback or CFrame.new(position)
 		end
 	end
-	return fallback or CFrame.new(anchor + GUN_OFFSETS[1])
+	return fallback or CFrame.new(point + GUN_OFFSETS[1])
+end
+
+local function rnd_skip()
+	local value = math.random(-VFR_LIMIT, VFR_LIMIT)
+	local guard = 0
+	while value >= -VFR_DEAD and value <= VFR_DEAD and guard < 16 do
+		value = math.random(-VFR_LIMIT, VFR_LIMIT)
+		guard += 1
+	end
+	return value
 end
 
 local function void_pose(now)
 	if not voidPose or now >= voidAt then
-		voidPose = CFrame.new(math.random(-1000000, 1000000), math.random(800000000, 1000000000), math.random(-1000000, 1000000))
+		voidPose = CFrame.new(rnd_skip(), math.abs(rnd_skip()), rnd_skip())
 		voidAt = now + VOID_REFRESH
 	end
 	return voidPose
@@ -749,7 +758,10 @@ end
 RunService:BindToRenderStep("fuku_restore", Enum.RenderPriority.First.Value, function()
 	if not desync.active or desync.real == nil then return end
 	local root = local_root()
-	if root then write_cframe(root, desync.real) end
+	if not root then return end
+	write_cframe(root, desync.real)
+	if desync.lv then write_prop(root, "AssemblyLinearVelocity", desync.lv) end
+	if desync.av then write_prop(root, "AssemblyAngularVelocity", desync.av) end
 end)
 
 local reference_update = CameraController.Update
@@ -762,10 +774,15 @@ CameraController.Update = function(...)
 end
 
 local function drop(root)
-	if root and desync.real then write_cframe(root, desync.real) end
+	if root and desync.real then
+		write_cframe(root, desync.real)
+		if desync.lv then write_prop(root, "AssemblyLinearVelocity", desync.lv) end
+		if desync.av then write_prop(root, "AssemblyAngularVelocity", desync.av) end
+	end
 	desync.active = false
-	desync.real, desync.wrote = nil, nil
-	trackPose, trackFighter = nil, nil
+	desync.real, desync.lv, desync.av, desync.wrote = nil, nil, nil, nil
+	holdPose, holdSince = nil, 0
+	trackFighter = nil
 	voidPose, voidAt = nil, 0
 	reloadLatch = nil
 	spam.phase = nil
@@ -786,9 +803,15 @@ RunService.Heartbeat:Connect(function(deltaTime)
 	if current then
 		if desync.wrote == nil or (current.Position - desync.wrote.Position).Magnitude > 0.01 then
 			desync.real = current
+			desync.lv = read_prop(root, "AssemblyLinearVelocity") or Vector3.zero
+			desync.av = read_prop(root, "AssemblyAngularVelocity") or Vector3.zero
 		end
 	end
-	if desync.real == nil then desync.real = current end
+	if desync.real == nil then
+		desync.real = current
+		desync.lv = Vector3.zero
+		desync.av = Vector3.zero
+	end
 	desync.active = true
 
 	update_ping()
@@ -798,7 +821,7 @@ RunService.Heartbeat:Connect(function(deltaTime)
 	local slot = resolve_slot(fighter)
 	local equipped = fighter.EquippedItem
 	local method = choice("rage_method", "none")
-	local serverPose, target = nil, nil
+	local serverPose, target, aimPoint = nil, nil, nil
 	local fireGunNow = false
 	local meleeEquipped = slot == 3 and item_index(equipped) == 3
 
@@ -818,13 +841,13 @@ RunService.Heartbeat:Connect(function(deltaTime)
 		spam.phase = nil
 		target = pick_target(trackFighter, true)
 		if target then
-			local velocity = observe(target, now)
-			local position = target.root.Position
-			if method == "prediction" then position = position + lead_vector(velocity, deltaTime) end
-			serverPose = CFrame.new(position)
-			trackPose, trackFighter = serverPose, target.fighter
+			local vel, acc = observe(target, now)
+			local eye = eye_offset(fighter)
+			aimPoint = predict_point(target, target.root.Position + eye, vel, acc, method)
+			serverPose = CFrame.new(aimPoint)
+			trackFighter = target.fighter
 		else
-			trackPose, trackFighter = nil, nil
+			trackFighter = nil
 			serverPose = void_pose(now)
 		end
 	elseif reloadLatch == equipped then
@@ -851,19 +874,16 @@ RunService.Heartbeat:Connect(function(deltaTime)
 
 		if not ready then
 			spam.phase = nil
-			trackPose, trackFighter = nil, nil
+			trackFighter = nil
 			serverPose = void_pose(now)
 		else
 			target = pick_target(trackFighter, false)
 			if target then
-				local velocity = observe(target, now)
+				local vel, acc = observe(target, now)
 				local eye = eye_offset(fighter)
-				local solved = solve_gun(target, eye, velocity, deltaTime, method)
-
-				if trackFighter ~= target.fighter or trackPose == nil or (solved.Position - trackPose.Position).Magnitude > 12 then
-					settleAt = now + settle_time()
-				end
-				trackPose, trackFighter = solved, target.fighter
+				aimPoint = predict_point(target, target.part.Position + eye, vel, acc, method)
+				local solved = solve_gun(target, eye, aimPoint)
+				trackFighter = target.fighter
 
 				local exposed = true
 				if bool("rage_voidspam", true) then
@@ -877,7 +897,6 @@ RunService.Heartbeat:Connect(function(deltaTime)
 						if spam.phase == "hide" then
 							spam.phase = "attack"
 							spam.shots = 0
-							settleAt = now + settle_time()
 							spam.endsAt = now + settle_time() + attackWindow
 						else
 							spam.phase = "hide"
@@ -892,18 +911,12 @@ RunService.Heartbeat:Connect(function(deltaTime)
 
 				if exposed then
 					serverPose = solved
-					local origin = solved.Position + eye
-					fireGunNow = now >= settleAt
-						and now >= fireAt
-						and (target.part.Position - origin).Magnitude <= MAX_RANGE
-						and ray_check(origin, target)
-						and not deflecting(target.fighter)
 				else
 					serverPose = void_pose(now)
 				end
 			else
 				spam.phase = nil
-				trackPose, trackFighter = nil, nil
+				trackFighter = nil
 				serverPose = void_pose(now)
 			end
 		end
@@ -911,21 +924,37 @@ RunService.Heartbeat:Connect(function(deltaTime)
 
 	if serverPose == nil then serverPose = void_pose(now) end
 
+	if holdPose == nil or (serverPose.Position - holdPose.Position).Magnitude > HOLD_JUMP then
+		holdPose, holdSince = serverPose, now
+	end
+
 	desync.wrote = serverPose
 	write_cframe(root, serverPose)
+	write_prop(root, "AssemblyLinearVelocity", Vector3.zero)
+	write_prop(root, "AssemblyAngularVelocity", Vector3.zero)
+
+	if target and aimPoint and slot ~= 3 then
+		local origin = serverPose.Position + eye_offset(fighter)
+		local possible = ray_check(origin, target, aimPoint)
+		fireGunNow = possible
+			and (now - holdSince) >= settle_time()
+			and now >= fireAt
+			and (target.part.Position - origin).Magnitude <= MAX_RANGE
+			and not deflecting(target.fighter)
+	end
 
 	local landed = false
 
-	if target and target.part.Parent then
-		local live = target.part.Position
+	if target and target.part.Parent and aimPoint then
 		local eye = eye_offset(fighter)
+		local origin = serverPose.Position + eye
 		if meleeEquipped then
-			local aim = CFrame.lookAt(serverPose.Position + eye, live)
+			local aim = CFrame.lookAt(origin, aimPoint)
 			send_rotation(aim)
 			fire_melee(equipped, aim, target.part)
 			landed = true
 		elseif fireGunNow then
-			local aim = CFrame.lookAt(serverPose.Position + eye, live)
+			local aim = CFrame.lookAt(origin, aimPoint)
 			send_rotation(aim)
 			fire_gun(equipped, aim, target.part, now)
 			fireAt = now + 1 / 120
