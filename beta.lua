@@ -24,28 +24,20 @@ local create_connection = lib["create_connection"]
 
 local function bool(flag, fallback)
 	local value = flags[flag]
-	if value == nil then
-		return fallback
-	end
+	if value == nil then return fallback end
 	return value == true
 end
 
 local function number(flag, fallback)
 	local value = tonumber(flags[flag])
-	if value == nil then
-		return fallback
-	end
+	if value == nil then return fallback end
 	return value
 end
 
 local function choice(flag, fallback)
 	local value = flags[flag]
-	if type(value) == "table" then
-		value = value[1] or next(value)
-	end
-	if type(value) == "string" then
-		return value
-	end
+	if type(value) == "table" then value = value[1] or next(value) end
+	if type(value) == "string" then return value end
 	return fallback
 end
 
@@ -87,15 +79,8 @@ ragebot:create_element({ ["name"] = "void spam" }, {
 pcall(function()
 	ragebot:create_element({ ["name"] = "attack time" }, {
 		["slider"] = {
-			["flag"] = "rage_attack_ms",
-			["default"] = 100,
-			["min"] = 10,
-			["max"] = 500,
-			["step"] = 1,
-			["increment"] = 1,
-			["rounding"] = 0,
-			["decimals"] = 0,
-			["suffix"] = "ms",
+			["flag"] = "rage_attack_ms", ["default"] = 100, ["min"] = 10, ["max"] = 500,
+			["step"] = 1, ["increment"] = 1, ["rounding"] = 0, ["decimals"] = 0, ["suffix"] = "ms",
 		},
 	})
 end)
@@ -103,15 +88,8 @@ end)
 pcall(function()
 	ragebot:create_element({ ["name"] = "hide time" }, {
 		["slider"] = {
-			["flag"] = "rage_hide_ms",
-			["default"] = 250,
-			["min"] = 10,
-			["max"] = 1000,
-			["step"] = 1,
-			["increment"] = 1,
-			["rounding"] = 0,
-			["decimals"] = 0,
-			["suffix"] = "ms",
+			["flag"] = "rage_hide_ms", ["default"] = 250, ["min"] = 10, ["max"] = 1000,
+			["step"] = 1, ["increment"] = 1, ["rounding"] = 0, ["decimals"] = 0, ["suffix"] = "ms",
 		},
 	})
 end)
@@ -131,17 +109,11 @@ right:create_element({ ["name"] = "no spread" }, {
 })
 
 local function load_module(parent, name)
-	if not parent then
-		return nil
-	end
+	if not parent then return nil end
 	local child = parent:FindFirstChild(name) or parent:WaitForChild(name, 10)
-	if not child then
-		return nil
-	end
+	if not child then return nil end
 	local ok, result = pcall(require, child)
-	if ok then
-		return result
-	end
+	if ok then return result end
 	return nil
 end
 
@@ -192,15 +164,12 @@ end
 
 local UpdateCameraRotation = ReplicatedStorage:FindFirstChild("UpdateCameraRotation", true)
 
-local rawindex = getrawmetatable(game).__index
-local fallenHeight = Workspace.FallenPartsDestroyHeight
+local gamemt = getrawmetatable(game)
+local rawindex = gamemt.__index
+local rawnewindex = gamemt.__newindex
 
 local rapid_fire_ignored = {
-	["Sniper"] = true,
-	["Crossbow"] = true,
-	["Bow"] = true,
-	["Daggers"] = true,
-	["RPG"] = true,
+	["Sniper"] = true, ["Crossbow"] = true, ["Bow"] = true, ["Daggers"] = true, ["RPG"] = true,
 }
 
 local original_melee
@@ -218,9 +187,7 @@ original_gun = hookfunction(Gun.StartShooting, function(self, ...)
 	if results[1] and results[2] == "StartShooting" and self.ClientFighter.IsLocalPlayer then
 		if flags.no_spread then
 			results[4] = true
-			if self.Name == "Revolver" then
-				results[5] = true
-			end
+			if self.Name == "Revolver" then results[5] = true end
 		end
 		if flags.rapid_fire and not rapid_fire_ignored[self.Name] then
 			self._shoot_cooldown = tick()
@@ -236,17 +203,12 @@ local function apply_rapid_fire(on)
 		if type(data) == "table" and data.ShootCooldown and not rapid_fire_ignored[name] then
 			local keep = saved[data]
 			if not keep then
-				keep = {
-					ShootCooldown = data.ShootCooldown,
-					ShootBurstCooldown = data.ShootBurstCooldown,
-				}
+				keep = { ShootCooldown = data.ShootCooldown, ShootBurstCooldown = data.ShootBurstCooldown }
 				saved[data] = keep
 			end
 			if on then
 				data.ShootCooldown = 0.001
-				if keep.ShootBurstCooldown then
-					data.ShootBurstCooldown = 0.001
-				end
+				if keep.ShootBurstCooldown then data.ShootBurstCooldown = 0.001 end
 			else
 				data.ShootCooldown = keep.ShootCooldown
 				data.ShootBurstCooldown = keep.ShootBurstCooldown
@@ -256,10 +218,7 @@ local function apply_rapid_fire(on)
 end
 
 create_connection(rapid_fire_toggle["on_toggle_change"], apply_rapid_fire)
-
-if flags.rapid_fire then
-	apply_rapid_fire(true)
-end
+if flags.rapid_fire then apply_rapid_fire(true) end
 
 pcall(function()
 	for index, value in pairs(debug.getupvalues(Gun._LocalTracers)) do
@@ -289,30 +248,26 @@ local VOID_REFRESH = 0.03
 local POSE_RESET = 12
 local MAX_SHOTS = 10
 local VOID = 1000000
+local VOID_Y = -99999999999
 local SLOT = { primary = 1, secondary = 2, melee = 3 }
 local K0, K1, K2, K3, K4 = utf8.char(0), utf8.char(1), utf8.char(2), utf8.char(3), utf8.char(4)
 local RELOAD_ANIMS = { "EmptyReload", "EmptyReloadStart", "EmptyReloadSegment", "EmptyReloadFinish", "Reload" }
 
 local OFFSETS = {
-	Vector3.new(0, 4, 0),
-	Vector3.new(2, 4, 0),
-	Vector3.new(-2, 4, 0),
-	Vector3.new(0, 4, 2),
-	Vector3.new(0, 4, -2),
-	Vector3.new(3, 5, 3),
-	Vector3.new(-3, 5, -3),
-	Vector3.new(0, 7, 0),
+	Vector3.new(0, 4, 0), Vector3.new(2, 4, 0), Vector3.new(-2, 4, 0),
+	Vector3.new(0, 4, 2), Vector3.new(0, 4, -2), Vector3.new(3, 5, 3),
+	Vector3.new(-3, 5, -3), Vector3.new(0, 7, 0),
 }
 
 local castParams = RaycastParams.new()
 castParams.FilterType = Enum.RaycastFilterType.Exclude
 castParams.IgnoreWater = true
 
-local desync = { real = nil, server = nil, lastPose = nil }
-local glue = { part = nil, bound = false, reported = false }
+local desync = { real = nil, vel = nil, ang = nil, active = false }
+local glue = { part = nil, bound = false, prev = nil, prevOk = false, told = false }
 local trackPose, trackFighter = nil, nil
 local voidPose, voidAt = nil, 0
-local fallenSet, fflagsSet = false, false
+local fallenGuarded, fflagsSet = false, false
 local spam = { phase = nil, endsAt = 0, shots = 0 }
 local settleAt, equipAt, fireAt, rotationAt = 0, 0, 0, 0
 local ping, pingAt = 0.08, 0
@@ -320,6 +275,113 @@ local reloadLatch = nil
 local reloadRequestAt = 0
 local trackers = setmetatable({}, { __mode = "k" })
 local motion = setmetatable({}, { __mode = "k" })
+
+local function identity(level)
+	if type(setthreadidentity) ~= "function" then return nil end
+	local old = type(getthreadidentity) == "function" and getthreadidentity() or nil
+	setthreadidentity(level)
+	return old
+end
+
+local function write_prop(part, prop, value)
+	local ok = false
+	if type(rawnewindex) == "function" then
+		ok = pcall(rawnewindex, part, prop, value)
+	end
+	if not ok then
+		ok = pcall(function() part[prop] = value end)
+	end
+	return ok
+end
+
+local function write_cframe(part, cf)
+	local old = identity(8)
+	local ok = write_prop(part, "CFrame", cf)
+	if old then identity(old) end
+	return ok
+end
+
+local function read_prop(part, prop)
+	if type(rawindex) == "function" then
+		local ok, value = pcall(rawindex, part, prop)
+		if ok then return value end
+	end
+	local ok, value = pcall(function() return part[prop] end)
+	if ok then return value end
+	return nil
+end
+
+local function guard_fallen()
+	if fallenGuarded then return end
+	fallenGuarded = true
+	if not write_prop(Workspace, "FallenPartsDestroyHeight", -math.huge) then
+		pcall(function() Workspace.FallenPartsDestroyHeight = -math.huge end)
+	end
+end
+
+local function set_rep_root(part, target)
+	if type(sethiddenproperty) ~= "function" then return false end
+	local old = identity(8)
+	local wrote = pcall(sethiddenproperty, part, "PhysicsRepRootPart", target)
+	local seen = nil
+	if wrote and type(gethiddenproperty) == "function" then
+		local ok, value = pcall(gethiddenproperty, part, "PhysicsRepRootPart")
+		if ok then seen = value end
+	end
+	if old then identity(old) end
+	if not wrote then return false end
+	if seen ~= nil and seen ~= target then return false end
+	return true
+end
+
+local function glue_bind(root, hit)
+	if glue.bound and glue.part == hit then return true end
+	if type(sethiddenproperty) ~= "function" then return false end
+	if not glue.prevOk and type(gethiddenproperty) == "function" then
+		local ok, value = pcall(gethiddenproperty, root, "PhysicsRepRootPart")
+		if ok then glue.prev, glue.prevOk = value, true end
+	end
+	if not set_rep_root(root, hit) then
+		glue.part, glue.bound = nil, false
+		if not glue.told then
+			glue.told = true
+			menu["new_notification"]("glue refused by executor", 5)
+		end
+		return false
+	end
+	glue.part, glue.bound = hit, true
+	if not glue.told then
+		glue.told = true
+		menu["new_notification"]("glue bound", 2)
+	end
+	return true
+end
+
+local function glue_release(root)
+	if not glue.bound then return end
+	glue.part, glue.bound = nil, false
+	if root and root.Parent then
+		local back = root
+		if glue.prevOk then back = glue.prev end
+		set_rep_root(root, back)
+	end
+end
+
+local function apply_fflags()
+	if fflagsSet or type(setfflag) ~= "function" then return end
+	fflagsSet = true
+	pcall(setfflag, "DFIntS2PhysicsSenderRate", "120")
+	pcall(setfflag, "DFIntAssemblyHistoryBufferSize", "2147483648")
+	pcall(setfflag, "DFIntAssemblyHistorySkipSize", "2147483648")
+end
+
+local function restore_fflags()
+	if not fflagsSet or type(setfflag) ~= "function" then return end
+	fflagsSet = false
+	pcall(setfflag, "DFIntS2PhysicsSenderRate", "15")
+	pcall(setfflag, "DFIntAssemblyHistoryBufferSize", "15")
+	pcall(setfflag, "DFIntAssemblyHistorySkipSize", "8")
+end
 
 local function settle_time()
 	return math.clamp(ping + 0.02, 0.03, 0.12)
@@ -329,143 +391,14 @@ local function local_root()
 	local fighter = FighterController.LocalFighter
 	local entity = type(fighter) == "table" and fighter.Entity or nil
 	local root = type(entity) == "table" and entity.RootPart or nil
-	if root and root.Parent then
-		return root
-	end
+	if root and root.Parent then return root end
 	local character = player.Character
 	return character and character:FindFirstChild("HumanoidRootPart") or nil
 end
 
-local function identity(level)
-	if type(setthreadidentity) ~= "function" then
-		return nil
-	end
-	local old = type(getthreadidentity) == "function" and getthreadidentity() or nil
-	setthreadidentity(level)
-	return old
-end
-
-local function raw_set_cframe(part, cf)
-	local old = identity(8)
-	local wrote = pcall(function()
-		part.CFrame = cf
-	end)
-	if old then
-		identity(old)
-	end
-	if wrote then
-		return true
-	end
-	return pcall(function()
-		part.CFrame = cf
-	end)
-end
-
-local function set_rep_root(part, target)
-	if type(sethiddenproperty) ~= "function" then
-		return false
-	end
-	local old = identity(8)
-	local wrote = pcall(sethiddenproperty, part, "PhysicsRepRootPart", target)
-	local seen = nil
-	if wrote and type(gethiddenproperty) == "function" then
-		local ok, value = pcall(gethiddenproperty, part, "PhysicsRepRootPart")
-		if ok then
-			seen = value
-		end
-	end
-	if old then
-		identity(old)
-	end
-	if not wrote then
-		return false
-	end
-	if seen ~= nil and seen ~= target then
-		return false
-	end
-	return true
-end
-
-local function glue_bind(root, hit)
-	if glue.bound and glue.part == hit then
-		return true
-	end
-	if not set_rep_root(root, hit) then
-		glue.part, glue.bound = nil, false
-		if not glue.reported then
-			glue.reported = true
-			menu["new_notification"]("glue refused by executor", 5)
-		end
-		return false
-	end
-	glue.part, glue.bound = hit, true
-	if not glue.reported then
-		glue.reported = true
-		menu["new_notification"]("glue bound", 2)
-	end
-	return true
-end
-
-local function glue_release(root)
-	if not glue.bound then
-		return
-	end
-	glue.part, glue.bound = nil, false
-	if root and root.Parent then
-		set_rep_root(root, root)
-	end
-end
-
-local function apply_fflags()
-	if fflagsSet or type(setfflag) ~= "function" then
-		return
-	end
-	fflagsSet = true
-	pcall(setfflag, "DFIntS2PhysicsSenderRate", "120")
-	pcall(setfflag, "DFIntAssemblyHistoryBufferSize", "2147483648")
-end
-
-local function restore_fflags()
-	if not fflagsSet or type(setfflag) ~= "function" then
-		return
-	end
-	fflagsSet = false
-	pcall(setfflag, "DFIntS2PhysicsSenderRate", "15")
-	pcall(setfflag, "DFIntAssemblyHistoryBufferSize", "15")
-end
-
-local function protect_fallen()
-	if fallenSet or type(sethiddenproperty) ~= "function" then
-		return
-	end
-	local old = identity(8)
-	pcall(sethiddenproperty, Workspace, "FallenPartsDestroyHeight", 0 / 0)
-	if old then
-		identity(old)
-	end
-	fallenSet = true
-end
-
-local function restore_fallen()
-	if not fallenSet then
-		return
-	end
-	fallenSet = false
-	if type(sethiddenproperty) ~= "function" then
-		return
-	end
-	local old = identity(8)
-	pcall(sethiddenproperty, Workspace, "FallenPartsDestroyHeight", fallenHeight)
-	if old then
-		identity(old)
-	end
-end
-
 local function update_ping()
 	local now = tick()
-	if now < pingAt then
-		return
-	end
+	if now < pingAt then return end
 	pingAt = now + 0.25
 	local ok, value = pcall(player.GetNetworkPing, player)
 	if ok and type(value) == "number" and value == value and value > 0 then
@@ -474,85 +407,58 @@ local function update_ping()
 end
 
 local function item_index(item)
-	if type(item) ~= "table" then
-		return nil
-	end
+	if type(item) ~= "table" then return nil end
 	local ok, value = pcall(item.Get, item, "ItemIndex")
-	if ok and type(value) == "number" then
-		return value
-	end
+	if ok and type(value) == "number" then return value end
 	local data = item.Data
 	return type(data) == "table" and data.ItemIndex or nil
 end
 
 local function object_id(item)
 	local ok, value = pcall(item.Get, item, "ObjectID")
-	if ok and value ~= nil then
-		return value
-	end
+	if ok and value ~= nil then return value end
 	return item.ObjectId
 end
 
 local function item_by_slot(fighter, slot)
-	if type(fighter) ~= "table" or type(fighter.Items) ~= "table" then
-		return nil
-	end
+	if type(fighter) ~= "table" or type(fighter.Items) ~= "table" then return nil end
 	for _, item in fighter.Items do
-		if item_index(item) == slot then
-			return item
-		end
+		if item_index(item) == slot then return item end
 	end
 	return nil
 end
 
 local function stat(item, key)
-	if type(item) ~= "table" then
-		return 0
-	end
+	if type(item) ~= "table" then return 0 end
 	local ok, value = pcall(item.Get, item, key)
-	if ok and type(value) == "number" then
-		return value
-	end
+	if ok and type(value) == "number" then return value end
 	local data = item.Data
-	if type(data) == "table" and type(data[key]) == "number" then
-		return data[key]
-	end
+	if type(data) == "table" and type(data[key]) == "number" then return data[key] end
 	return 0
 end
 
 local function shot_cooldown(item)
 	local live = items[item.Name]
 	local info = item.Info
-
 	local function pick(key)
 		if type(live) == "table" then
-			local value = tonumber(live[key])
-			if value then
-				return value
-			end
+			local v = tonumber(live[key])
+			if v then return v end
 		end
 		if type(info) == "table" then
-			local value = tonumber(info[key])
-			if value then
-				return value
-			end
+			local v = tonumber(info[key])
+			if v then return v end
 		end
 		return tonumber(item[key])
 	end
-
 	local burst = math.max(pick("ShootBurst") or 1, 1)
 	local burstCooldown = pick("ShootBurstCooldown") or 0
 	local cooldown = pick("ShootCooldown") or 0
-
-	if item.Name == "Revolver" then
-		cooldown = pick("QuickShotCooldown") or cooldown
-	end
-
+	if item.Name == "Revolver" then cooldown = pick("QuickShotCooldown") or cooldown end
 	if flags.rapid_fire and not rapid_fire_ignored[item.Name] then
 		cooldown = math.min(cooldown, 0.001)
 		burstCooldown = math.min(burstCooldown, 0.001)
 	end
-
 	return cooldown, burst, burstCooldown
 end
 
@@ -562,27 +468,19 @@ local function reconcile(item, now)
 		entry = { raw = stat(item, "Ammo"), spend = 0, deadline = nil, nextAt = 0 }
 		trackers[item] = entry
 	end
-
 	local ammo = stat(item, "Ammo")
-
 	if ammo > entry.raw then
 		entry.raw, entry.spend, entry.deadline, entry.nextAt = ammo, 0, nil, 0
 		return entry
 	end
-
 	if ammo < entry.raw then
 		entry.spend = math.max(entry.spend - (entry.raw - ammo), 0)
 		entry.raw = ammo
 	end
-
-	if entry.spend <= 0 then
-		entry.deadline = nil
-	end
-
+	if entry.spend <= 0 then entry.deadline = nil end
 	if entry.deadline and now >= entry.deadline then
 		entry.spend, entry.nextAt, entry.deadline = 0, 0, nil
 	end
-
 	return entry
 end
 
@@ -593,15 +491,9 @@ end
 
 local function record_shot(item, now)
 	local entry = reconcile(item, now)
-	if now < entry.nextAt then
-		return
-	end
-
+	if now < entry.nextAt then return end
 	local available = math.max(entry.raw - entry.spend, 0)
-	if available <= 0 then
-		return
-	end
-
+	if available <= 0 then return end
 	local cooldown, burst, burstCooldown = shot_cooldown(item)
 	entry.spend += math.min(burst, available)
 	entry.deadline = now + ping + 0.06
@@ -610,45 +502,31 @@ end
 
 local function can_shoot(item, now)
 	local entry = reconcile(item, now)
-	if now < entry.nextAt then
-		return false
-	end
+	if now < entry.nextAt then return false end
 	local empty = item._shoot_cooldown_no_ammo
-	if type(empty) == "number" and now < empty then
-		return false
-	end
+	if type(empty) == "number" and now < empty then return false end
 	local equip = item._equip_cooldown
-	if type(equip) == "number" and now < equip then
-		return false
-	end
+	if type(equip) == "number" and now < equip then return false end
 	if not (flags.rapid_fire and not rapid_fire_ignored[item.Name]) then
 		local cooldown = item._shoot_cooldown
-		if type(cooldown) == "number" and now < cooldown then
-			return false
-		end
+		if type(cooldown) == "number" and now < cooldown then return false end
 	end
 	return true
 end
 
 local function is_reloading(item)
 	local cooldown = item._reload_cooldown
-	if type(cooldown) == "number" and tick() < cooldown then
-		return true
-	end
+	if type(cooldown) == "number" and tick() < cooldown then return true end
 	local threads = item._reload_threads
 	if type(threads) == "table" then
 		local active = threads[#threads]
-		if active ~= nil and coroutine.status(active) ~= "dead" then
-			return true
-		end
+		if active ~= nil and coroutine.status(active) ~= "dead" then return true end
 	end
 	local viewModel = item.ViewModel
 	if type(viewModel) == "table" then
 		for _, name in RELOAD_ANIMS do
 			local ok, playing = pcall(viewModel.IsAnimationPlaying, viewModel, name)
-			if ok and playing == true then
-				return true
-			end
+			if ok and playing == true then return true end
 		end
 	end
 	return false
@@ -656,125 +534,57 @@ end
 
 local function start_reload(item)
 	local now = tick()
-	if now < reloadRequestAt or is_reloading(item) or stat(item, "AmmoReserve") <= 0 then
-		return
-	end
+	if now < reloadRequestAt or is_reloading(item) or stat(item, "AmmoReserve") <= 0 then return end
 	reloadRequestAt = now + 0.25
 	local old = identity(2)
 	local ok, started = pcall(item.StartReloading, item)
-	if not ok or started ~= true then
-		pcall(item.Input, item, "StartReloading")
-	end
-	if old then
-		identity(old)
-	end
+	if not ok or started ~= true then pcall(item.Input, item, "StartReloading") end
+	if old then identity(old) end
 end
 
 local function alive(fighter)
-	if type(fighter) ~= "table" or type(fighter.Items) ~= "table" or next(fighter.Items) == nil then
-		return false
-	end
+	if type(fighter) ~= "table" or type(fighter.Items) ~= "table" or next(fighter.Items) == nil then return false end
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	return humanoid ~= nil and humanoid.Health > 0
 end
 
 local function match_active()
-	if not SpectateController then
-		return true
-	end
+	if not SpectateController then return true end
 	local subject = SpectateController.CurrentDuelSubject
-	if type(subject) ~= "table" then
-		return true
-	end
+	if type(subject) ~= "table" then return true end
 	local data = subject.Data
-	if type(data) == "table" and data.Status ~= nil then
-		return data.Status == "RoundStarted"
-	end
+	if type(data) == "table" and data.Status ~= nil then return data.Status == "RoundStarted" end
 	return true
 end
 
 local function invincible(fighter)
 	local entity = fighter.Entity
-	if type(entity) ~= "table" then
-		return true
-	end
-	if entity._invincibility_visual then
-		return true
-	end
-	if entity.IsInvincible == true then
-		return true
-	end
+	if type(entity) ~= "table" then return true end
+	if entity._invincibility_visual then return true end
+	if entity.IsInvincible == true then return true end
 	if type(fighter.IsInvincible) == "function" then
 		local ok, value = pcall(fighter.IsInvincible, fighter)
-		if ok and value == true then
-			return true
-		end
+		if ok and value == true then return true end
 	end
 	return false
 end
 
 local function deflecting(fighter)
 	local item = fighter.EquippedItem
-	if type(item) ~= "table" then
-		return false
-	end
+	if type(item) ~= "table" then return false end
 	if type(item.IsDeflecting) == "function" then
 		local ok, value = pcall(item.IsDeflecting, item)
-		if ok and value == true then
-			return true
-		end
+		if ok and value == true then return true end
 	end
-	return item._deflect_hash ~= nil
-		and type(item._attack_cooldown) == "number"
-		and tick() < item._attack_cooldown
-end
-
-local function shielded(target, from)
-	local fighter = target.fighter
-	if type(fighter.Items) ~= "table" then
-		return false
-	end
-
-	local holding, has = false, false
-	for _, item in fighter.Items do
-		if item.Name == "Riot Shield" then
-			has = true
-			if fighter.EquippedItem == item then
-				holding = true
-			end
-		end
-	end
-	if not has or not holding then
-		return false
-	end
-
-	local delta = from - target.root.Position
-	local flat = Vector3.new(delta.X, 0, delta.Z)
-	if flat.Magnitude < 2 then
-		return false
-	end
-
-	local look = target.root.CFrame.LookVector
-	local ok, rotation = pcall(fighter.GetRotationCFrame, fighter)
-	if ok and typeof(rotation) == "CFrame" then
-		look = rotation.LookVector
-	end
-	look = Vector3.new(look.X, 0, look.Z)
-	if look.Magnitude < 0.001 then
-		return false
-	end
-
-	return look.Unit:Dot(flat.Unit) > 0.35
+	return item._deflect_hash ~= nil and type(item._attack_cooldown) == "number" and tick() < item._attack_cooldown
 end
 
 local function environment_of(who, fighter)
 	local value = who:GetAttribute("EnvironmentID")
 	if value == nil and type(fighter) == "table" and type(fighter.Get) == "function" then
 		local ok, result = pcall(fighter.Get, fighter, "EnvironmentID")
-		if ok then
-			value = result
-		end
+		if ok then value = result end
 	end
 	return value
 end
@@ -782,18 +592,11 @@ end
 local function pick_target(current)
 	local fighter = FighterController.LocalFighter
 	local root = local_root()
-	if not root or type(fighter) ~= "table" then
-		return nil
-	end
-
+	if not root or type(fighter) ~= "table" then return nil end
 	local myTeam = player:GetAttribute("TeamID")
-	if myTeam == nil then
-		return nil
-	end
-
+	if myTeam == nil then return nil end
 	local myEnvironment = environment_of(player, fighter)
 	local best, bestScore = nil, math.huge
-
 	for _, enemy in FighterController.Objects do
 		local who = type(enemy) == "table" and enemy.Player or nil
 		if who and who ~= player then
@@ -814,17 +617,10 @@ local function pick_target(current)
 							local theirEnvironment = environment_of(who, enemy)
 							if myEnvironment == nil or theirEnvironment == nil or theirEnvironment == myEnvironment then
 								local score = (enemyRoot.Position - root.Position).Magnitude
-								if current == enemy then
-									score = score * 0.8
-								end
+								if current == enemy then score = score * 0.8 end
 								if score < bestScore then
 									bestScore = score
-									best = {
-										fighter = enemy,
-										character = model,
-										root = enemyRoot,
-										part = head,
-									}
+									best = { fighter = enemy, character = model, root = enemyRoot, part = head }
 								end
 							end
 						end
@@ -833,33 +629,24 @@ local function pick_target(current)
 			end
 		end
 	end
-
 	return best
 end
 
 local function observe(target, now)
 	local position = target.part.Position
 	local reported = Vector3.zero
-
-	local ok, value = pcall(function()
-		return target.root.AssemblyLinearVelocity
-	end)
-	if ok and typeof(value) == "Vector3" and value == value then
-		reported = value
-	end
-
+	local ok, value = pcall(function() return target.root.AssemblyLinearVelocity end)
+	if ok and typeof(value) == "Vector3" and value == value then reported = value end
 	local entry = motion[target.fighter]
 	if not entry then
 		entry = { samples = {}, velocity = Vector3.zero }
 		motion[target.fighter] = entry
 	end
-
 	local samples = entry.samples
 	samples[#samples + 1] = { t = now, p = position }
 	while #samples > 2 and now - samples[1].t > SAMPLE_WINDOW do
 		table.remove(samples, 1)
 	end
-
 	local derived = Vector3.zero
 	local first = samples[1]
 	local span = now - first.t
@@ -871,61 +658,35 @@ local function observe(target, now)
 			derived = Vector3.zero
 		end
 	end
-
 	local instant = reported
-	if derived.Magnitude > instant.Magnitude then
-		instant = derived
-	end
-	if instant.Magnitude > 200 then
-		instant = instant.Unit * 200
-	end
-
+	if derived.Magnitude > instant.Magnitude then instant = derived end
+	if instant.Magnitude > 200 then instant = instant.Unit * 200 end
 	entry.velocity = entry.velocity * 0.65 + instant * 0.35
-
 	local velocity = entry.velocity
-	if velocity.Magnitude < 2 then
-		return Vector3.zero
-	end
+	if velocity.Magnitude < 2 then return Vector3.zero end
 	return velocity
 end
 
 local function lead_vector(velocity, deltaTime)
-	if velocity.Magnitude < 2 then
-		return Vector3.zero
-	end
+	if velocity.Magnitude < 2 then return Vector3.zero end
 	local leadTime = math.clamp(ping * 2 + deltaTime, 0, 0.3)
 	local lead = velocity * leadTime
 	lead = Vector3.new(lead.X, lead.Y * 0.35, lead.Z)
-	if lead.Magnitude > LEAD_CAP then
-		lead = lead.Unit * LEAD_CAP
-	end
+	if lead.Magnitude > LEAD_CAP then lead = lead.Unit * LEAD_CAP end
 	return lead
 end
 
 local function aim_result(origin, target)
 	local ignore = { player.Character }
 	local viewModels = Workspace:FindFirstChild("ViewModels")
-	if viewModels then
-		ignore[#ignore + 1] = viewModels
-	end
+	if viewModels then ignore[#ignore + 1] = viewModels end
 	castParams.FilterDescendantsInstances = ignore
-
 	local direction = target.part.Position - origin
-	if direction.Magnitude < 0.01 then
-		return true, true
-	end
-
+	if direction.Magnitude < 0.01 then return true end
 	local hit = Workspace:Raycast(origin, direction, castParams)
-	if hit == nil then
-		return true, true
-	end
-	if hit.Instance == target.part then
-		return true, true
-	end
-	if hit.Instance:IsDescendantOf(target.character) then
-		return true, false
-	end
-	return false, false
+	if hit == nil then return true end
+	if hit.Instance == target.part then return true end
+	return hit.Instance:IsDescendantOf(target.character)
 end
 
 local function eye_offset(fighter)
@@ -937,20 +698,22 @@ local function eye_offset(fighter)
 	return Vector3.new(0, crouched and CROUCHED_EYE or EYE, 0)
 end
 
-local function solve_world(target, eye, velocity, deltaTime, method)
+local function solve_world(target, eye, velocity, deltaTime, method, melee)
 	local anchor = target.root.Position
-	if method == "prediction" then
-		anchor = anchor + lead_vector(velocity, deltaTime)
-	end
-
+	if method == "prediction" then anchor = anchor + lead_vector(velocity, deltaTime) end
+	if melee then return CFrame.new(anchor) end
 	local fallback = nil
 	for _, offset in OFFSETS do
 		local position = anchor + offset
 		local origin = position + eye
-		local possible, isHead = aim_result(origin, target)
-		if possible and not shielded(target, origin) then
-			if isHead then
-				return CFrame.new(position)
+		if aim_result(origin, target) then
+			if aim_result(origin, target) then
+				local direction = target.part.Position - origin
+				castParams.FilterDescendantsInstances = { player.Character }
+				local hit = Workspace:Raycast(origin, direction, castParams)
+				if hit == nil or hit.Instance == target.part then
+					return CFrame.new(position)
+				end
 			end
 			fallback = fallback or CFrame.new(position)
 		end
@@ -960,20 +723,17 @@ end
 
 local function void_pose(now)
 	if not voidPose or now >= voidAt then
-		voidPose = CFrame.new(math.random(-100000, 100000), math.random(110000, 130000), math.random(-100000, 100000))
+		local position = Vector3.new(math.random(-10000, 10000), VOID_Y, math.random(-10000, 10000))
+		voidPose = CFrame.new(position) * CFrame.Angles(math.pi, math.pi, math.pi)
 		voidAt = now + VOID_REFRESH
 	end
 	return voidPose
 end
 
 local function send_rotation(aim)
-	if not UpdateCameraRotation then
-		return
-	end
+	if not UpdateCameraRotation then return end
 	local now = tick()
-	if now < rotationAt then
-		return
-	end
+	if now < rotationAt then return end
 	rotationAt = now + 0.1
 	local pitch, yaw = aim:ToOrientation()
 	pcall(function()
@@ -982,13 +742,9 @@ local function send_rotation(aim)
 end
 
 local function hide_rotation()
-	if not UpdateCameraRotation then
-		return
-	end
+	if not UpdateCameraRotation then return end
 	local now = tick()
-	if now < rotationAt then
-		return
-	end
+	if now < rotationAt then return end
 	rotationAt = now + 0.1
 	pcall(function()
 		UpdateCameraRotation:FireServer(Utility:EncodeCameraRotation(90, math.random(0, 360)), nil)
@@ -1000,19 +756,13 @@ local function fire_gun(item, aim, part, now)
 		[K0] = Utility:EncodeCFrame(aim),
 		[K1] = Utility:EncodeCFrame(aim - Vector3.new(0, 0.1, 0)),
 		[K2] = part,
-		[K3] = Utility:EncodeCFrame(CFrame.new(0, 1, 0)),
+		[K3] = Utility:EncodeCFrame(CFrame.new()),
 	}
-	if item.Name == "Revolver" then
-		inner[K4] = true
-	end
+	if item.Name == "Revolver" then inner[K4] = true end
 	local outer = { [K1] = inner }
-	if item.IsRaycast then
-		outer[K2] = true
-	end
+	if item.IsRaycast then outer[K2] = true end
 	local id = object_id(item)
-	if id == nil then
-		return
-	end
+	if id == nil then return end
 	pcall(function()
 		UseItem:FireServer(id, EnumLibrary:ToEnum("StartShooting"), outer, nil)
 	end)
@@ -1021,13 +771,9 @@ end
 
 local function fire_melee(item, aim, part)
 	local viewModel = item.ViewModel
-	if type(viewModel) ~= "table" then
-		return
-	end
+	if type(viewModel) ~= "table" then return end
 	local ok, keys = pcall(viewModel.GetAnimationKeys, viewModel, "Attack")
-	if not ok or type(keys) ~= "table" or #keys == 0 then
-		return
-	end
+	if not ok or type(keys) ~= "table" or #keys == 0 then return end
 	local inner = {
 		[K0] = Utility:EncodeCFrame(aim),
 		[K1] = Utility:EncodeCFrame(aim + Vector3.new(0.01, 0.01, 0.01)),
@@ -1035,9 +781,7 @@ local function fire_melee(item, aim, part)
 		[K3] = Utility:EncodeCFrame(CFrame.new()),
 	}
 	local id = object_id(item)
-	if id == nil then
-		return
-	end
+	if id == nil then return end
 	pcall(function()
 		UseItem:FireServer(id, EnumLibrary:ToEnum("StartShooting"), {
 			[K1] = inner,
@@ -1048,94 +792,78 @@ end
 
 local function resolve_slot(fighter)
 	local wanted = SLOT[choice("rage_weapon", "primary")] or 1
-	if wanted == 3 then
-		return 3
-	end
-
+	if wanted == 3 then return 3 end
 	local preferred = item_by_slot(fighter, wanted)
-	if preferred and (stat(preferred, "Ammo") > 0 or stat(preferred, "AmmoReserve") > 0) then
-		return wanted
-	end
-
+	if preferred and (stat(preferred, "Ammo") > 0 or stat(preferred, "AmmoReserve") > 0) then return wanted end
 	local otherSlot = wanted == 1 and 2 or 1
 	local alternate = item_by_slot(fighter, otherSlot)
-	if alternate and (stat(alternate, "Ammo") > 0 or stat(alternate, "AmmoReserve") > 0) then
-		return otherSlot
-	end
-
-	if item_by_slot(fighter, 3) then
-		return 3
-	end
-
+	if alternate and (stat(alternate, "Ammo") > 0 or stat(alternate, "AmmoReserve") > 0) then return otherSlot end
+	if item_by_slot(fighter, 3) then return 3 end
 	return wanted
 end
 
-local function restore()
+RunService:BindToRenderStep("fuku_restore", Enum.RenderPriority.First.Value, function()
+	if not desync.active then return end
 	local root = local_root()
-	if root and desync.real then
-		root.CFrame = desync.real
-	end
-end
+	if not root or desync.real == nil then return end
+	write_cframe(root, desync.real)
+	if desync.vel then write_prop(root, "AssemblyLinearVelocity", desync.vel) end
+	if desync.ang then write_prop(root, "AssemblyAngularVelocity", desync.ang) end
+end)
 
 local reference_update = CameraController.Update
 CameraController.Update = function(...)
-	restore()
-	local results = table.pack(reference_update(...))
-	local root = local_root()
-	if root and desync.server then
-		root.CFrame = desync.server
+	if desync.active then
+		local root = local_root()
+		if root and desync.real then write_cframe(root, desync.real) end
 	end
-	return table.unpack(results, 1, results.n)
+	return reference_update(...)
 end
 
-RunService.PreRender:Connect(restore)
-
 local function drop(root)
+	glue_release(root)
 	if root and desync.real then
-		root.CFrame = desync.real
+		write_cframe(root, desync.real)
+		if desync.vel then write_prop(root, "AssemblyLinearVelocity", desync.vel) end
+		if desync.ang then write_prop(root, "AssemblyAngularVelocity", desync.ang) end
 	end
-	desync.server = nil
-	desync.real = nil
-	desync.lastPose = nil
+	desync.active = false
+	desync.real, desync.vel, desync.ang = nil, nil, nil
 	trackPose, trackFighter = nil, nil
 	voidPose, voidAt = nil, 0
 	reloadLatch = nil
 	spam.phase = nil
 	spam.shots = 0
-	glue_release(root)
-	restore_fallen()
 	restore_fflags()
 end
 
 RunService.Heartbeat:Connect(function(deltaTime)
 	local root = local_root()
-	if not root then
-		drop(nil)
-		return
-	end
+	if not root then drop(nil) return end
 
 	local fighter = FighterController.LocalFighter
-
 	if not bool("ragebot_main", false) or not UseItem or not alive(fighter) or not match_active() then
 		drop(root)
 		return
 	end
 
-	local current = rawindex(root, "CFrame")
-	if desync.real == nil or desync.lastPose == nil or (current.Position - desync.lastPose.Position).Magnitude > 0.05 then
-		desync.real = current
+	if not desync.active then
+		desync.real = read_prop(root, "CFrame")
+		desync.vel = read_prop(root, "AssemblyLinearVelocity") or Vector3.zero
+		desync.ang = read_prop(root, "AssemblyAngularVelocity") or Vector3.zero
+		desync.active = true
 	end
 
 	update_ping()
-	protect_fallen()
+	guard_fallen()
 	apply_fflags()
 
 	local now = tick()
 	local slot = resolve_slot(fighter)
 	local equipped = fighter.EquippedItem
 	local method = choice("rage_method", "glue")
-	local pose, attacking, target = nil, false, nil
-	local useGlue = false
+	local serverPose, attacking, target = nil, false, nil
+	local glued = false
 
 	if item_index(equipped) ~= slot then
 		reloadLatch = nil
@@ -1144,26 +872,26 @@ RunService.Heartbeat:Connect(function(deltaTime)
 			equipAt = now + 0.3
 			task.spawn(fighter.EquipItem, fighter, slot)
 		end
-		pose = void_pose(now)
+		serverPose = void_pose(now)
 	elseif type(equipped.IsEquipping) == "function" and select(2, pcall(equipped.IsEquipping, equipped)) == true then
 		spam.phase = nil
-		pose = void_pose(now)
+		serverPose = void_pose(now)
 	elseif reloadLatch == equipped then
 		spam.phase = nil
 		if stat(equipped, "Ammo") <= 0 and stat(equipped, "AmmoReserve") <= 0 then
 			reloadLatch = nil
-			pose = void_pose(now)
+			serverPose = void_pose(now)
 		elseif stat(equipped, "Ammo") > 0 and not is_reloading(equipped) then
 			reloadLatch = nil
 			trackers[equipped] = nil
 		else
-			pose = void_pose(now)
+			serverPose = void_pose(now)
 			start_reload(equipped)
 		end
 	elseif slot ~= 3 and stat(equipped, "Ammo") <= 0 then
 		reloadLatch = equipped
 		spam.phase = nil
-		pose = void_pose(now)
+		serverPose = void_pose(now)
 	else
 		target = pick_target(trackFighter)
 		if target then
@@ -1194,16 +922,32 @@ RunService.Heartbeat:Connect(function(deltaTime)
 				spam.shots = 0
 			end
 
-			if exposed then
-				if method == "glue" and glue_bind(root, target.part) then
-					useGlue = true
-					pose = CFrame.new(target.part.Position + GLUE_PARK)
-					trackPose, trackFighter = pose, target.fighter
-					local origin = pose.Position + eye
+			if not exposed then
+				serverPose = void_pose(now)
+			elseif method == "glue" and slot ~= 3 and glue_bind(root, target.part) then
+				glued = true
+				local origin = target.part.Position + GLUE_PARK + eye
+				trackPose, trackFighter = nil, target.fighter
+				attacking = now >= fireAt
+					and expected_ammo(equipped, now) > 0
+					and not is_reloading(equipped)
+					and can_shoot(equipped, now)
+					and not deflecting(target.fighter)
+			else
+				local solved = solve_world(target, eye, velocity, deltaTime, method, slot == 3)
+				if solved then
+					if trackFighter ~= target.fighter or trackPose == nil or (solved.Position - trackPose.Position).Magnitude > POSE_RESET then
+						settleAt = now + settle_time()
+					end
+					trackPose, trackFighter = solved, target.fighter
+					serverPose = solved
+					local origin = solved.Position + eye
 					if slot == 3 then
 						attacking = now >= fireAt
 					else
-						attacking = now >= fireAt
+						attacking = aim_result(origin, target)
+							and now >= settleAt
+							and now >= fireAt
 							and expected_ammo(equipped, now) > 0
 							and (target.part.Position - origin).Magnitude <= MAX_RANGE
 							and not is_reloading(equipped)
@@ -1211,73 +955,39 @@ RunService.Heartbeat:Connect(function(deltaTime)
 							and not deflecting(target.fighter)
 					end
 				else
-					local solved
-					if slot == 3 then
-						local position = target.root.Position
-						if method == "prediction" then
-							position = position + lead_vector(velocity, deltaTime)
-						end
-						solved = CFrame.new(position)
-					else
-						solved = solve_world(target, eye, velocity, deltaTime, method)
-					end
-
-					if solved then
-						if trackFighter ~= target.fighter or trackPose == nil or (solved.Position - trackPose.Position).Magnitude > POSE_RESET then
-							settleAt = now + settle_time()
-						end
-						trackPose, trackFighter = solved, target.fighter
-						pose = solved
-						local origin = solved.Position + eye
-						if slot == 3 then
-							attacking = now >= fireAt
-						else
-							attacking = aim_result(origin, target)
-								and now >= settleAt
-								and now >= fireAt
-								and expected_ammo(equipped, now) > 0
-								and (target.part.Position - origin).Magnitude <= MAX_RANGE
-								and not is_reloading(equipped)
-								and can_shoot(equipped, now)
-								and not deflecting(target.fighter)
-								and not shielded(target, origin)
-						end
-					else
-						spam.phase = nil
-						trackPose, trackFighter = nil, nil
-						pose = void_pose(now)
-					end
+					spam.phase = nil
+					trackPose, trackFighter = nil, nil
+					serverPose = void_pose(now)
 				end
-			else
-				pose = void_pose(now)
 			end
 		else
 			spam.phase = nil
 			trackPose, trackFighter = nil, nil
-			pose = void_pose(now)
+			serverPose = void_pose(now)
 		end
 	end
 
-	if pose == nil then
-		pose = void_pose(now)
-	end
-
-	if not useGlue then
+	if not glued then
 		glue_release(root)
+		if serverPose == nil then serverPose = void_pose(now) end
+		write_cframe(root, serverPose)
+		write_prop(root, "AssemblyLinearVelocity", Vector3.zero)
+		write_prop(root, "AssemblyAngularVelocity", Vector3.zero)
 	end
-
-	desync.server = pose
-	desync.lastPose = pose
-	raw_set_cframe(root, pose)
 
 	local landed = false
 
 	if attacking and target and target.part.Parent then
 		local live = target.part.Position
+		local origin
+		if glued then
+			origin = live + GLUE_PARK + eye_offset(fighter)
+		else
+			origin = serverPose.Position + eye_offset(fighter)
+		end
 		local limit = slot == 3 and MELEE_RANGE or MAX_RANGE
-		if live.Magnitude < VOID and (live - pose.Position).Magnitude <= limit then
-			local eye = eye_offset(fighter)
-			local aim = CFrame.lookAt(pose.Position + eye, live)
+		if live.Magnitude < VOID and (live - origin).Magnitude <= limit then
+			local aim = CFrame.lookAt(origin, live)
 			send_rotation(aim)
 			if slot == 3 then
 				fire_melee(equipped, aim, target.part)
